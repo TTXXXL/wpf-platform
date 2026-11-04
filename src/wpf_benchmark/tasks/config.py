@@ -151,6 +151,11 @@ def resolve_task(cfg: TaskConfig, meta: Dict[str, Any]) -> ResolvedTask:
     entity_rated = np.asarray([float(e["rated_kw"]) for e in meta["entities"]], dtype=np.float32)
     rated = np.full_like(entity_rated, cfg.rated_kw) if cfg.rated_kw else entity_rated
     eval_stride = cfg.eval_stride_minutes or res
+    for minutes in cfg.report_horizons_minutes:
+        _steps(minutes, res, "report_horizons_minutes")
+        if minutes > cfg.horizon_minutes:
+            raise ValueError(f"Task {cfg.name}: report horizon {minutes} min exceeds horizon_minutes="
+                             f"{cfg.horizon_minutes}")
     return ResolvedTask(cfg, meta, _steps(cfg.history_minutes, res, "history_minutes"),
                         _steps(cfg.horizon_minutes, res, "horizon_minutes"),
                         _steps(cfg.train_stride_minutes, res, "train_stride_minutes"),

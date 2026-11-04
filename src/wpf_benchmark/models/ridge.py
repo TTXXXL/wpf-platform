@@ -14,14 +14,19 @@ from .base import Forecaster, register_model
 class Ridge(Forecaster):
     default_params = {"alpha": 1.0, "inputs": None}
 
-    def fit(self, ctx: TaskContext, train: SplitData, valid: SplitData) -> None:
-        super().fit(ctx, train, valid)
-        alpha = float(self._params["alpha"])
-        if alpha < 0:
+    def validate_context(self, ctx: TaskContext) -> None:
+        if float(self._params["alpha"]) < 0:
             raise ValueError("alpha must be nonnegative")
         names = self._params["inputs"] or [ctx.target_input]
         if None in names:
             raise ValueError("ridge needs a task target_input or explicit params.inputs")
+        for name in names:
+            ctx.input_index(name)
+
+    def fit(self, ctx: TaskContext, train: SplitData, valid: SplitData) -> None:
+        super().fit(ctx, train, valid)
+        alpha = float(self._params["alpha"])
+        names = self._params["inputs"] or [ctx.target_input]
         self.sel = [ctx.input_index(n) for n in names]
         self.names = [ctx.input_names[j] for j in self.sel]
         L, H, S = ctx.L, ctx.H, len(self.sel)

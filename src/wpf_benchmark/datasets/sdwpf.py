@@ -19,7 +19,7 @@ import pandas as pd
 
 from ..data.panel import Panel
 from ..provenance import sha256_file
-from . import sdwpf_clean
+from . import option_int, sdwpf_clean
 
 ADAPTER_VERSION = "1"
 RATED_KW = 1550.0
@@ -95,7 +95,7 @@ def _location(raw_dir: Path) -> Optional[pd.DataFrame]:
 
 def build(paths, name: str = "sdwpf", mode: str = "raw", source: Optional[str] = None, train_days=196,
           clean_parquet: Optional[str] = None) -> Tuple[Panel, str]:
-    train_days = int(train_days)
+    train_days = option_int("train_days", train_days)
     raw_dir = Path(source) if source else paths.raw / "sdwpf"
     if mode == "raw":
         result = sdwpf_clean.clean(raw_dir, train_days)

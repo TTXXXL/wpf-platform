@@ -15,8 +15,9 @@ import pandas as pd
 
 from ..data.panel import Panel
 from ..provenance import code_digest, sha256_file
+from . import option_int
 
-ADAPTER_VERSION = "1"
+ADAPTER_VERSION = "2"      # 2: duplicate timestamps keep the first row (1 merged columns with groupby.first)
 RAW_ROOT = Path("D:/codex/风电预测/datasets/OpenWPF_8datasets")
 FARMS = {
     "kelmarsh": {"title": "Kelmarsh wind farm (UK)", "folder": "02_Kelmarsh_UK", "static": "Kelmarsh_WT_static.csv",
@@ -92,9 +93,18 @@ def read_scada_member(job: Tuple[str, str]) -> Dict[str, Any]:
     df["ts"] = pd.to_datetime(df["ts"], format="%Y-%m-%d %H:%M:%S")
     df = df.dropna(subset=["ts"])
     unique = df["ts"].nunique()
-    df = df.groupby("ts", sort=True).first() if unique < len(df) else df.sort_values("ts").set_index("ts")
+    df = df.sort_values("ts", kind="stable")
+    filled = 0
+    if unique < len(df):
+        # Protocol: the first row of a timestamp is the record; later rows only repeat it. Count the cells
+        # that the earlier column-wise merge (groupby.first) would have filled from a later row instead.
+        merged = df.groupby("ts", sort=True).first()
+        df = df.drop_duplicates("ts", keep="first").set_index("ts")
+        filled = int((df.isna() & merged.reindex(df.index).notna()).to_numpy().sum())
+    else:
+        df = df.set_index("ts")
     out = {"times": df.index.to_numpy().astype("datetime64[s]"), "raw_rows": raw_rows, "unique_rows": int(unique),
-           "missing_cols": missing}
+           "dup_filled_cells": filled, "missing_cols": missing}
     for k in RAW_VARS:
         out[k] = df[k].to_numpy(np.float32) if k in df else np.full(len(df), np.nan, np.float32)
     return out
@@ -213,7 +223,8 @@ def _assemble(plan: List[Dict[str, Any]], results: List[Dict[str, Any]], col_of:
         j = col_of.get(m["wt"])
         src, row, dropped = _place(res, start, n_times)
         note = {"zip": Path(m["zip"]).name, "member": m["member"], "wt": m["wt"], "raw_rows": res["raw_rows"],
-                "unique_rows": res["unique_rows"], "dropped": dropped, "missing_cols": res["missing_cols"],
+                "unique_rows": res["unique_rows"], "dup_filled_cells": res["dup_filled_cells"],
+                "dropped": dropped, "missing_cols": res["missing_cols"],
                 "superseded": m["superseded"], "overlap_cells": 0, "power_conflicts": 0, "max_power_diff": 0.0,
                 "presence_mismatch": 0}
         notes.append(note)
@@ -313,7 +324,9 @@ def _report(name: str, panel: Panel, meta: Dict[str, Any], notes: List[Dict[str,
         L.append(f"| {Path(s['path']).name} | {s['bytes']} | {s['role']} |")
     L += ["", "## 跳过的文件", ""] + ([f"- {s['path']}：{s['reason']}" for s in skipped] or ["无。"])
     dup = sum(n["raw_rows"] - n["unique_rows"] for n in notes if not n["superseded"])
-    L += ["", "## 逐成员行数与去重", "", f"采用的数据文件合计去重行数 {dup}（同一时刻只保留第一行）。", "",
+    filled = sum(n["dup_filled_cells"] for n in notes if not n["superseded"])
+    L += ["", "## 逐成员行数与去重", "", f"采用的数据文件合计去重行数 {dup}（同一时刻只保留第一行）。"
+          f"首行为空、但后续重复行有值的格数 {filled}（旧写法逐列取首个非空值会补上这些格，现在保持为空）。", "",
           "| zip | 机组 | 原始行 | 唯一时刻 | 去重行 | 网格外丢弃 | 缺列 | 重叠格 | 被取代 | 功率冲突 | 最大差 kW | 有无不一致 |",
           "|---|---|---|---|---|---|---|---|---|---|---|---|"]
     for n in notes:
@@ -338,6 +351,13 @@ def build(paths, name: str, source: Optional[str] = None, start: Optional[str] =
     """Build the kelmarsh or penmanshiel panel from the Greenbyte SCADA zips under ``source``."""
     if name not in FARMS:
         raise KeyError(f"greenbyte adapter builds {sorted(FARMS)}, not {name!r}")
+    workers = option_int("workers", workers)
+    for label, value in (("start", start), ("end", end)):
+        if value is not None:
+            try:
+                np.datetime64(value, "s")
+            except ValueError:
+                raise ValueError(f"Option {label} must be a date or time such as 2021-01-01, got {value!r}") from None
     t_begin = time.time()
     farm = FARMS[name]
     source = Path(source) if source else RAW_ROOT / farm["folder"]

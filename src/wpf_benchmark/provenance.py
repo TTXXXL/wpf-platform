@@ -3,10 +3,11 @@ from __future__ import annotations
 
 import functools
 import hashlib
+import json
 import platform
 import subprocess
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
 
@@ -17,6 +18,12 @@ def sha256_file(path: Path, chunk: int = 8 << 20) -> str:
         while block := handle.read(chunk):
             digest.update(block)
     return digest.hexdigest()
+
+
+def canonical_sha256(value: Any) -> str:
+    """SHA256 of a JSON-serialisable value with sorted keys, so equal content hashes equal."""
+    text = json.dumps(value, sort_keys=True, ensure_ascii=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 @functools.lru_cache(maxsize=None)

@@ -150,6 +150,27 @@ class NeuralForecaster(Forecaster):
         self.validation_metrics = dict(best_metrics, best_epoch=best_epoch, stopped_epoch=epoch)
         self.log(f"best_epoch={best_epoch} best_valid_{p['loss']}={best:.8f} stopped_epoch={epoch}")
 
+    def dry_run(self, ctx: TaskContext, train: SplitData) -> None:
+        """Build the network on CPU and push two training windows through it, without training."""
+        import torch
+        self.ctx, self.torch, self.device = ctx, torch, torch.device("cpu")
+        network = self.build_network(self._spec()).to(self.device)
+        batch = train.batch(train.issues[:2])
+        x = ctx.scaler.scale_inputs(batch.x_past, ctx.input_names)
+        if not self.raw_inputs:
+            x = np.nan_to_num(x, nan=0.0, posinf=0.0, neginf=0.0)
+        B, L, N, F = x.shape
+        if self.layout == "entity":
+            x, expected = x.transpose(0, 2, 1, 3).reshape(B * N, L, F), (B * N, ctx.H)
+        else:
+            expected = (B, ctx.H, N)
+        network.eval()
+        with torch.no_grad():
+            out = network(torch.from_numpy(np.ascontiguousarray(x, dtype=np.float32)))
+        if tuple(out.shape) != expected or not bool(torch.isfinite(out).all()):
+            raise ValueError(f"{self.name}: forward pass gave shape {tuple(out.shape)} "
+                             f"(expected {expected}) or nonfinite values")
+
     # ----- inference -----
     def predict(self, batch: ForecastBatch) -> np.ndarray:
         torch, ctx = self.torch, self.ctx
@@ -180,7 +201,8 @@ class NeuralForecaster(Forecaster):
         import os
         torch = self.torch
         state = {"format_version": CHECKPOINT_VERSION, "model": self.name, "params": self.params,
-                 "task": self.ctx.task.config.to_dict(), "input_names": list(self.ctx.input_names),
+                 "task": self.ctx.task.config.to_dict(), "task_semantics": _semantics(self.ctx.task),
+                 "input_names": list(self.ctx.input_names),
                  "entities": list(self.ctx.entities), "scaler": self.ctx.scaler.to_dict(),
                  "validation_metrics": self.validation_metrics, "metadata": metadata or {},
                  "torch_version": str(torch.__version__),
@@ -191,13 +213,39 @@ class NeuralForecaster(Forecaster):
 
 
 CHECKPOINT_VERSION = 2
+SEMANTIC_TASK_FIELDS = ("dataset", "target", "target_input", "inputs", "history_minutes", "horizon_minutes",
+                        "future_inputs")
 
 
-def load_checkpoint(path, task, device: Optional[str] = None) -> NeuralForecaster:
+def _semantics(task) -> Dict[str, Any]:
+    """What fixes the meaning of a network's inputs and outputs, beyond the shape of its tensors."""
+    cfg = task.config
+    return {**{k: getattr(cfg, k) for k in SEMANTIC_TASK_FIELDS}, "resolution_minutes": task.resolution_minutes,
+            "rated_kw": [float(v) for v in task.rated_kw]}
+
+
+def _check_semantics(saved: Dict[str, Any], task) -> None:
+    """Raise if the checkpoint was trained for a task that reads or predicts something else."""
+    expected, found = _semantics(task), dict(saved.get("task_semantics") or {})
+    if not found:                       # written before semantics were stored: compare what the task dict kept
+        found = {k: v for k, v in (saved.get("task") or {}).items() if k in SEMANTIC_TASK_FIELDS}
+    differing = [k for k, v in found.items() if k in expected and _plain(expected[k]) != _plain(v)]
+    if differing:
+        raise ValueError("Checkpoint was trained for a different task meaning (" + ", ".join(differing) +
+                         "); pass strict=False to reuse its weights on purpose")
+
+
+def _plain(value):
+    return [_plain(v) for v in value] if isinstance(value, (list, tuple)) else value
+
+
+def load_checkpoint(path, task, device: Optional[str] = None, strict: bool = True) -> NeuralForecaster:
     """Rebuild a fitted network for ``task`` (a ResolvedTask) without training.
 
     ``device`` defaults to the one ``fit`` uses (CUDA when available), so a reloaded model
     reproduces the original predictions; CPU and GPU kernels differ in the last digits.
+    ``strict`` also compares target, target input, lengths, resolution and rated power with the
+    task the network was trained for; ``strict=False`` is the explicit way to transfer weights.
     """
     import torch
     device = device or ("cuda" if torch.cuda.is_available() else "cpu")
@@ -210,6 +258,8 @@ def load_checkpoint(path, task, device: Optional[str] = None) -> NeuralForecaste
     cfg = task.config
     if list(cfg.inputs) != saved["input_names"] or [str(e["id"]) for e in task.meta["entities"]] != saved["entities"]:
         raise ValueError("Checkpoint inputs or entity order differ from the task")
+    if strict:
+        _check_semantics(saved, task)
     model.ctx = TaskContext(task, list(cfg.inputs), cfg.target, cfg.target_input, task.L, task.H,
                             saved["entities"], task.rated_kw, Scaler.from_dict(saved["scaler"]))
     model.torch, model.device = torch, torch.device(device)

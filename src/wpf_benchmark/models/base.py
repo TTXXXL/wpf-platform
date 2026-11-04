@@ -54,7 +54,11 @@ class Forecaster:
     def deterministic(self) -> bool:
         return True
 
+    def validate_context(self, ctx: TaskContext) -> None:
+        """Check model/task compatibility without fitting or changing model state."""
+
     def fit(self, ctx: TaskContext, train: SplitData, valid: SplitData) -> None:
+        self.validate_context(ctx)
         self.ctx = ctx
 
     def predict(self, batch: ForecastBatch) -> np.ndarray:

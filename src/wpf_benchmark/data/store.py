@@ -12,7 +12,7 @@ import pyarrow as pa
 import pyarrow.compute as pc
 import pyarrow.parquet as pq
 
-from ..provenance import sha256_file
+from ..provenance import canonical_sha256, sha256_file
 from .panel import Panel
 
 STORE_VERSION = 1
@@ -73,6 +73,31 @@ def load_meta(directory: Path) -> Dict[str, Any]:
     return meta
 
 
+VOLATILE_META = ("written_utc", "build")      # change with every rebuild without changing the data
+_VERIFIED: Dict[Any, str] = {}
+
+
+def meta_digest(meta: Dict[str, Any]) -> str:
+    """Hash of the metadata that fixes data semantics: units, rated power, masks, resolution, sources."""
+    return canonical_sha256({k: v for k, v in meta.items() if k not in VOLATILE_META})
+
+
+def verify_dataset(directory: Path) -> Dict[str, str]:
+    """Hash panel.parquet itself and compare it with meta.json; cached per process by size and mtime."""
+    directory = Path(directory)
+    meta = load_meta(directory)
+    path = directory / "panel.parquet"
+    stat = path.stat()
+    key = (str(path.resolve()), stat.st_size, stat.st_mtime_ns, meta["panel_sha256"])
+    if key not in _VERIFIED:
+        actual = sha256_file(path)
+        if actual != meta["panel_sha256"]:
+            raise ValueError(f"{path} does not match the SHA256 recorded in meta.json "
+                             f"(file {actual[:12]}, meta {meta['panel_sha256'][:12]})")
+        _VERIFIED[key] = actual
+    return {"panel_sha256": _VERIFIED[key], "meta_sha256": meta_digest(meta)}
+
+
 def _as_datetime(value) -> datetime:
     return np.datetime64(value, "us").astype(datetime)
 
@@ -84,8 +109,8 @@ def load_panel(directory: Path, variables: Optional[Sequence[str]] = None,
     directory = Path(directory)
     meta = load_meta(directory)
     path = directory / "panel.parquet"
-    if verify and sha256_file(path) != meta["panel_sha256"]:
-        raise ValueError(f"{path} does not match the SHA256 recorded in meta.json")
+    if verify:
+        verify_dataset(directory)
     variables = list(meta["variables"]) if variables is None else list(dict.fromkeys(variables))
     masks = list(meta["masks"]) if masks is None else list(dict.fromkeys(masks))
     unknown = [v for v in variables if v not in meta["variables"]] + [m for m in masks if m not in meta["masks"]]

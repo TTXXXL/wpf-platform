@@ -32,6 +32,6 @@ wpf-benchmark study --plan baselines_v1 --preflight
 | 指标定义与结果文件 | [评估](docs/评估.md) |
 | 服务器部署、批跑、续跑与回传 | [服务器部署与批跑](docs/服务器部署与批跑.md) |
 
-旧版 SDWPF 研究代码（PIN、尾流、低功率头、固定预算双掩码、论文图件）保留在服务器版 Git 标签 `legacy-sdwpf-20261103`。新平台在旧切分和 M1 掩码下，持续法、Ridge 的全部指标与旧代码一致，相对差 ≤ 1e-11。
+旧版 SDWPF 研究代码（PIN、尾流、低功率头、固定预算双掩码、论文图件）保留在服务器版 Git 标签 `legacy-sdwpf-20261103`。初次移植时，在旧切分和 M1 掩码下核验过持续法、Ridge 与旧代码的全部指标，相对差 ≤ 1e-11。这是移植时的核验记录；后续修复已调整日电量统计并新增方向性爬坡指标，当前字段和定义见 [评估](docs/评估.md)。
 
 第三方模型参考代码的来源和许可证见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。

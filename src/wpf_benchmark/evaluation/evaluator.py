@@ -107,13 +107,23 @@ def _conditional(task, test, pred, truth, valid, err, rated, reference, wind) ->
                            start=str(issue_times[rows][0]), end=str(issue_times[rows][-1])))
     out["stability_blocks"] = blocks
     threshold = cfg.ramp_threshold_frac * rated
-    ramp_true = valid & (np.abs(truth - reference) >= threshold)
-    ramp_pred = valid & (np.abs(pred - reference) >= threshold)
-    tp, pos, pred_pos = int((ramp_true & ramp_pred).sum()), int(ramp_true.sum()), int(ramp_pred.sum())
-    out["ramp"] = {"threshold_frac_of_rated": cfg.ramp_threshold_frac, "n_true": pos, "n_pred": pred_pos,
-                   "n_hit": tp, "recall": safe_ratio(tp, pos), "precision": safe_ratio(tp, pred_pos),
-                   "f1": safe_ratio(2 * tp, pos + pred_pos),
-                   "MAE_on_true_ramps_kW": float(np.abs(err[ramp_true]).mean(dtype=np.float64)) if pos else float("nan")}
+    d_true, d_pred = truth - reference, pred - reference           # change relative to the persistence reference
+    ramp_true = valid & (np.abs(d_true) >= threshold)
+    ramp_pred = valid & (np.abs(d_pred) >= threshold)
+    out["ramp_change_detection"] = dict(
+        _detection(ramp_true, ramp_pred), threshold_frac_of_rated=cfg.ramp_threshold_frac,
+        definition="event = |P - P_reference| >= threshold, either direction; a hit needs only both sides to "
+                   "exceed the threshold, so a predicted fall against a real rise counts as a hit",
+        MAE_on_true_ramps_kW=float(np.abs(err[ramp_true]).mean(dtype=np.float64)) if ramp_true.any() else float("nan"))
+    directional = {}
+    for label, sign in (("up", 1.0), ("down", -1.0)):
+        directional[label] = _detection(valid & (sign * d_true >= threshold), valid & (sign * d_pred >= threshold))
+    both_events = ramp_true & ramp_pred
+    directional["direction_accuracy"] = safe_ratio(int((np.sign(d_true) == np.sign(d_pred))[both_events].sum()),
+                                                   int(both_events.sum()))
+    directional["amplitude_bias_kW"] = float((np.abs(d_pred) - np.abs(d_true))[ramp_true].mean(dtype=np.float64)) \
+        if ramp_true.any() else float("nan")
+    out["ramp_directional"] = directional
     if task.eval_stride == 1:
         out["daily_energy"] = _daily_energy(task, test, pred, truth, valid)
     out["sanity"] = {"negative_rate_pct": 100.0 * safe_ratio(int((valid & (pred < 0)).sum()), n),
@@ -121,20 +131,39 @@ def _conditional(task, test, pred, truth, valid, err, rated, reference, wind) ->
     return out
 
 
+def _detection(truth_event: np.ndarray, pred_event: np.ndarray) -> Dict[str, Any]:
+    tp, pos, pred_pos = int((truth_event & pred_event).sum()), int(truth_event.sum()), int(pred_event.sum())
+    return {"n_true": pos, "n_pred": pred_pos, "n_hit": tp, "recall": safe_ratio(tp, pos),
+            "precision": safe_ratio(tp, pred_pos), "f1": safe_ratio(2 * tp, pos + pred_pos)}
+
+
 def _daily_energy(task, test, pred, truth, valid) -> Dict[str, Any]:
     """h=1 forecasts, one per 10-minute target, summed per calendar day of the target time."""
     step = np.timedelta64(task.resolution_minutes, "m").astype("timedelta64[us]")
     days = (test.issue_times + step).astype("datetime64[D]")
     to_mwh = task.resolution_minutes / 60.0 / 1000.0
+    expected = task.steps_per_day * valid.shape[2]               # time x turbine cells in a full day
     rows = []
     for day in np.unique(days):
         take = days == day
         m = valid[take, 0]
+        if not m.any():
+            continue                                             # no scorable cell: not a zero-error day
         actual = float(np.where(m, truth[take, 0], 0.0).sum(dtype=np.float64) * to_mwh)
         forecast = float(np.where(m, pred[take, 0], 0.0).sum(dtype=np.float64) * to_mwh)
-        rows.append({"day": str(day), "n_steps": int(take.sum()), "actual_MWh": actual, "forecast_MWh": forecast,
-                     "abs_error_MWh": abs(forecast - actual),
+        rows.append({"day": str(day), "n_steps": int(take.sum()), "valid_cells": int(m.sum()),
+                     "expected_cells": expected, "coverage": float(m.sum() / expected),
+                     "actual_MWh": actual, "forecast_MWh": forecast, "abs_error_MWh": abs(forecast - actual),
                      "APE_pct": 100.0 * abs(forecast - actual) / actual if actual else float("nan")})
+    excluded = int(len(np.unique(days))) - len(rows)
+    covered = [r for r in rows if r["coverage"] >= task.config.farm_min_valid_frac]
+    return {"energy_basis": "scorable time x turbine cells only (actual and forecast summed over the same cells)",
+            "min_coverage": task.config.farm_min_valid_frac, "n_days": len(rows), "n_days_no_valid_cell": excluded,
+            "n_days_below_min_coverage": len(rows) - len(covered), **_daily_summary(rows),
+            "covered": dict(n_days=len(covered), **_daily_summary(covered)), "per_day": rows}
+
+
+def _daily_summary(rows) -> Dict[str, float]:
     ape = [r["APE_pct"] for r in rows if np.isfinite(r["APE_pct"])]
-    return {"n_days": len(rows), "MAE_MWh": float(np.mean([r["abs_error_MWh"] for r in rows])),
-            "MAPE_pct": float(np.mean(ape)) if ape else float("nan"), "per_day": rows}
+    return {"MAE_MWh": float(np.mean([r["abs_error_MWh"] for r in rows])) if rows else float("nan"),
+            "MAPE_pct": float(np.mean(ape)) if ape else float("nan")}

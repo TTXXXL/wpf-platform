@@ -79,6 +79,13 @@ class LightGBM(Forecaster):
         return np.concatenate(x_parts), np.concatenate(y_parts), np.concatenate(good_parts)
 
     # ----- fit / predict -----
+    def validate_context(self, ctx: TaskContext) -> None:
+        lags = int(self._params["lags"])
+        if lags and ctx.target_input_index is None:
+            raise ValueError("lightgbm needs a task target_input for its lag features (or set lags to 0)")
+        if lags > ctx.L:
+            raise ValueError(f"lags={lags} exceeds the history length L={ctx.L}")
+
     def fit(self, ctx: TaskContext, train: SplitData, valid: SplitData) -> None:
         try:
             import lightgbm
@@ -89,10 +96,6 @@ class LightGBM(Forecaster):
         p = self._params
         lags = int(p["lags"])
         self.target_index = ctx.target_input_index
-        if lags and self.target_index is None:
-            raise ValueError("lightgbm needs a task target_input for its lag features (or set lags to 0)")
-        if lags > ctx.L:
-            raise ValueError(f"lags={lags} exceeds the history length L={ctx.L}")
         if not len(train.issues):
             raise ValueError("The training split has no windows")
         X, Y, good = self._split_samples(train)

@@ -30,6 +30,9 @@ def time_of_day(times: np.ndarray, steps_per_day: int) -> np.ndarray:
 class Persistence(Forecaster):
     """Every horizon repeats the latest finite target_input value (0 kW if none)."""
 
+    def validate_context(self, ctx):
+        _require_target_input(ctx, self.name)
+
     def fit(self, ctx, train, valid):
         super().fit(ctx, train, valid)
         self.j = _require_target_input(ctx, self.name)
@@ -43,14 +46,15 @@ class Persistence(Forecaster):
 class SeasonalPersistence(Forecaster):
     """Value at the same time one day before each target; persistence where it is missing."""
 
+    def validate_context(self, ctx):
+        _require_target_input(ctx, self.name)
+        if ctx.L < ctx.steps_per_day or ctx.H > ctx.steps_per_day:
+            raise ValueError("seasonal_persistence needs history >= 1 day and horizon <= 1 day")
+
     def fit(self, ctx, train, valid):
         super().fit(ctx, train, valid)
         self.j = _require_target_input(ctx, self.name)
-        if ctx.L < ctx.steps_per_day:
-            raise ValueError("seasonal_persistence needs at least one day of history")
         self.offsets = np.arange(1, ctx.H + 1) - ctx.steps_per_day + ctx.L - 1
-        if (self.offsets < 0).any() or (self.offsets >= ctx.L).any():
-            raise ValueError("seasonal_persistence needs history >= 1 day and horizon <= 1 day")
 
     def predict(self, batch: ForecastBatch) -> np.ndarray:
         series = batch.x_past[:, :, :, self.j]

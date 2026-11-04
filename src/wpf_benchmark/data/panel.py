@@ -27,6 +27,14 @@ class Panel:
             step = np.diff(self.times)
             if not (step == step[0]).all() or step[0] <= np.timedelta64(0, "us"):
                 raise ValueError("Panel times must form a strictly increasing regular grid")
+            if "resolution_minutes" in self.meta and step[0] != self.resolution:
+                raise ValueError(f"Grid step is {step[0].astype('timedelta64[m]')}, but meta.resolution_minutes "
+                                 f"is {self.meta['resolution_minutes']}")
+        if len(set(self.entities)) != len(self.entities):
+            raise ValueError("Panel entity ids must be unique")
+        for entity in self.meta.get("entities", ()):
+            if not float(entity["rated_kw"]) > 0:
+                raise ValueError(f"Entity {entity['id']} needs a positive rated_kw")
 
     @property
     def resolution(self) -> np.timedelta64:

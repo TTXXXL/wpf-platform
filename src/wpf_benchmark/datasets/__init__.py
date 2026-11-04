@@ -11,6 +11,17 @@ from typing import Any, Dict
 from ..data.store import write_dataset
 from ..paths import ProjectPaths
 
+def option_int(name: str, value: Any, minimum: int = 1) -> int:
+    """Parse an adapter option that the CLI passes as text; the error names the option."""
+    try:
+        number = int(str(value).strip())
+    except ValueError:
+        raise ValueError(f"Option {name} must be an integer, got {value!r}") from None
+    if number < minimum:
+        raise ValueError(f"Option {name} must be at least {minimum}, got {number}")
+    return number
+
+
 ADAPTERS: Dict[str, str] = {
     "sdwpf": "wpf_benchmark.datasets.sdwpf",
     "kelmarsh": "wpf_benchmark.datasets.greenbyte",

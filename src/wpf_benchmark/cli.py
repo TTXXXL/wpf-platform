@@ -43,6 +43,8 @@ def _parser() -> argparse.ArgumentParser:
     st.add_argument("--preflight", action="store_true", help="Only check; do not train")
     st.add_argument("--package", action="store_true", help="Only (re)build the delivery ZIP")
     st.add_argument("--allow-changed-code", action="store_true")
+    st.add_argument("--rerun-stale", action="store_true",
+                    help="Redo finished runs whose task, model, seed or data differ from the plan")
     st.add_argument("--only", help="Run only jobs whose task/model contains this text")
     st.add_argument("--include-predictions", action="store_true")
     st.add_argument("--include-checkpoints", action="store_true")
@@ -102,11 +104,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         from . import study
         plan = _plan_path(paths, args.plan)
         if args.preflight:
-            print(json.dumps(study.preflight(paths, study.load_plan(plan)), indent=2, ensure_ascii=False, default=str))
+            report = study.preflight(paths, study.load_plan(plan))
+            print(json.dumps(report, indent=2, ensure_ascii=False, default=str))
+            return 1 if report["problems"] else 0
         elif args.package:
             print(study.package(paths, plan, args.include_predictions, args.include_checkpoints))
         else:
-            study.run_study(paths, plan, args.allow_changed_code, args.only)
+            study.run_study(paths, plan, args.allow_changed_code, args.only, rerun_stale=args.rerun_stale)
             print(study.package(paths, plan, args.include_predictions, args.include_checkpoints))
     return 0
 

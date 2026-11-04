@@ -218,6 +218,7 @@ def sync(files: Dict[str, Path], current: Dict[str, str], previous: Optional[Dic
     temporary_manifest.write_text(
         json.dumps({"schema": 1, "managed": current}, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
+        newline="\n",
     )
     os.replace(str(temporary_manifest), str(manifest_path))
 

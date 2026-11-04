@@ -46,5 +46,7 @@ def make_panel(days: int = 30, entities: int = 3, seed: int = 0, name: str = "sy
 
 
 def build(paths, name: str = "synthetic", days: int = 30, entities: int = 3, seed: int = 0) -> Tuple[Panel, str]:
-    panel = make_panel(int(days), int(entities), int(seed), name)
+    from . import option_int
+    panel = make_panel(option_int("days", days), option_int("entities", entities),
+                       option_int("seed", seed, minimum=0), name)
     return panel, f"# {name}\n\nSynthetic panel: {days} days, {entities} turbines, seed {seed}.\n"
