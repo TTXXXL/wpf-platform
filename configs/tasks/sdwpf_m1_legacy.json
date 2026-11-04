@@ -1,0 +1,23 @@
+{
+  "name": "sdwpf_m1_legacy",
+  "description": "Legacy SDWPF protocol: 144 x 10 min history, 12-step forecast, days 1-196 / 197-221 / 222-245, M1 training and scoring. Also scored on the legacy 'all' table and on M2.",
+  "dataset": "sdwpf",
+  "target": "power",
+  "target_input": "power",
+  "inputs": ["wind_speed", "wind_dir_rel_sin", "wind_dir_rel_cos", "power"],
+  "history_minutes": 1440,
+  "horizon_minutes": 120,
+  "train_stride_minutes": 60,
+  "eval_stride_minutes": 10,
+  "splits": {"train": ["1970-01-01", "1970-07-16"],
+             "valid": ["1970-07-16", "1970-08-10"],
+             "test": ["1970-08-10", "1970-09-03"]},
+  "train_mask": "m1",
+  "valid_mask": "m1",
+  "eval_mask": "m1",
+  "extra_eval_masks": [{"mask": "power_finite", "target": "power"},
+                       {"mask": "m2", "target": "power_obs"}],
+  "report_horizons_minutes": [10, 60, 120],
+  "farm_min_valid_frac": 0.85,
+  "wind_variable": "wind_speed"
+}

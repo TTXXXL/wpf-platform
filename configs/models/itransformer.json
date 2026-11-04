@@ -1,0 +1,2 @@
+{"label": "itransformer", "model": "itransformer",
+ "params": {"d_model": 128, "heads": 4, "layers": 2, "ff": 256, "dropout": 0.1}}

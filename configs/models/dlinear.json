@@ -1,0 +1,2 @@
+{"label": "dlinear", "model": "dlinear",
+ "params": {"moving_avg": 25, "channels": "target", "individual": false}}

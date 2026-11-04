@@ -1,0 +1,2 @@
+{"label": "patchtst", "model": "patchtst",
+ "params": {"d_model": 128, "heads": 4, "layers": 2, "ff": 256, "patch": 12, "patch_stride": 6, "dropout": 0.1, "head": "channel", "revin_affine": false}}

@@ -1,0 +1,20 @@
+{
+  "name": "penmanshiel_actual_6h",
+  "description": "penmanshiel 10-minute actual-power forecast, 6 h ahead from 24 h of history; B/C normal-operation masks scored in addition.",
+  "dataset": "penmanshiel",
+  "target": "power",
+  "target_input": "power",
+  "inputs": ["wind_speed", "wind_dir_sin", "wind_dir_cos", "power"],
+  "history_minutes": 1440,
+  "horizon_minutes": 360,
+  "train_stride_minutes": 60,
+  "eval_stride_minutes": 10,
+  "splits": {"train": ["2016-09-01", "2022-01-01"],
+             "valid": ["2022-01-01", "2023-01-01"],
+             "test": ["2023-01-01", "2025-01-01"]},
+  "train_mask": "observed",
+  "valid_mask": "observed",
+  "eval_mask": "observed",
+  "extra_eval_masks": [{"mask": "normal_b", "target": "power"}, {"mask": "normal_c", "target": "power"}],
+  "report_horizons_minutes": [60, 120, 360]
+}

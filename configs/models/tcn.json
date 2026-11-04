@@ -1,0 +1,2 @@
+{"label": "tcn", "model": "tcn",
+ "params": {"channels": 64, "levels": null, "kernel": 3, "dropout": 0.1}}

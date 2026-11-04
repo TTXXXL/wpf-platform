@@ -1,0 +1,22 @@
+{
+  "name": "sdwpf_m2_legacy",
+  "description": "Legacy SDWPF protocol with M2 targets: train and score on raw observed power (power_obs). Inputs keep the cleaned power history. Also scored on M1.",
+  "dataset": "sdwpf",
+  "target": "power_obs",
+  "target_input": "power",
+  "inputs": ["wind_speed", "wind_dir_rel_sin", "wind_dir_rel_cos", "power"],
+  "history_minutes": 1440,
+  "horizon_minutes": 120,
+  "train_stride_minutes": 60,
+  "eval_stride_minutes": 10,
+  "splits": {"train": ["1970-01-01", "1970-07-16"],
+             "valid": ["1970-07-16", "1970-08-10"],
+             "test": ["1970-08-10", "1970-09-03"]},
+  "train_mask": "m2",
+  "valid_mask": "m2",
+  "eval_mask": "m2",
+  "extra_eval_masks": [{"mask": "m1", "target": "power"}],
+  "report_horizons_minutes": [10, 60, 120],
+  "farm_min_valid_frac": 0.85,
+  "wind_variable": "wind_speed"
+}

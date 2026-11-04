@@ -1,0 +1,10 @@
+{
+  "name": "baselines_v1",
+  "description": "All built-in models on the legacy SDWPF M1 task and the Kelmarsh/Penmanshiel actual-output 6 h tasks. Not run yet; start only after approval.",
+  "tasks": ["sdwpf_m1_legacy", "kelmarsh_actual_6h", "penmanshiel_actual_6h"],
+  "models": ["persistence", "seasonal_persistence", "climatology", "ridge", "lightgbm",
+             "lstm", "tcn", "dlinear", "patchtst", "itransformer", "agcrn", "agcrn_skip"],
+  "seeds": [0, 1, 2],
+  "save_predictions": false,
+  "save_checkpoints": true
+}

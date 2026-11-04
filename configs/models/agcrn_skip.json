@@ -1,0 +1,2 @@
+{"label": "agcrn_skip", "model": "agcrn",
+ "params": {"hidden": 64, "layers": 2, "emb": 10, "cheb_k": 2, "current_power_skip": true, "loss": "mae", "batch": 16}}

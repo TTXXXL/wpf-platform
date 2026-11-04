@@ -1,0 +1,2 @@
+{"label": "lstm", "model": "lstm",
+ "params": {"hidden": 128, "layers": 2, "dropout": 0.1}}

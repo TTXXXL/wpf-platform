@@ -1,0 +1,19 @@
+{
+  "name": "synthetic_6h",
+  "description": "Smoke-test task on the synthetic dataset (wpf-benchmark build synthetic).",
+  "dataset": "synthetic",
+  "target": "power",
+  "target_input": "power",
+  "inputs": ["wind_speed", "wind_dir_sin", "wind_dir_cos", "power"],
+  "history_minutes": 1440,
+  "horizon_minutes": 360,
+  "train_stride_minutes": 60,
+  "eval_stride_minutes": 10,
+  "splits": {"train": ["2020-01-01", "2020-01-21"],
+             "valid": ["2020-01-21", "2020-01-25"],
+             "test": ["2020-01-25", "2020-01-31"]},
+  "train_mask": "observed",
+  "eval_mask": "observed",
+  "extra_eval_masks": [{"mask": "normal", "target": "power"}],
+  "report_horizons_minutes": [60, 120, 360]
+}

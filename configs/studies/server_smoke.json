@@ -1,0 +1,16 @@
+{
+  "name": "server_smoke",
+  "description": "Server check: every model, one epoch, on the synthetic dataset (wpf-benchmark build synthetic).",
+  "tasks": ["synthetic_6h"],
+  "models": ["persistence", "seasonal_persistence", "climatology", "ridge", "lightgbm",
+             {"label": "lstm", "model": "lstm", "params": {"epochs": 1}},
+             {"label": "tcn", "model": "tcn", "params": {"epochs": 1}},
+             {"label": "dlinear", "model": "dlinear", "params": {"epochs": 1}},
+             {"label": "patchtst", "model": "patchtst", "params": {"epochs": 1}},
+             {"label": "itransformer", "model": "itransformer", "params": {"epochs": 1}},
+             {"label": "agcrn", "model": "agcrn", "params": {"epochs": 1}},
+             {"label": "agcrn_skip", "model": "agcrn", "params": {"epochs": 1, "current_power_skip": true}}],
+  "seeds": [0],
+  "save_predictions": false,
+  "save_checkpoints": true
+}
