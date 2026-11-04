@@ -5,10 +5,19 @@ The network follows the authors' MIT-licensed implementation
 (``agcrn_original.py``). Graph supports and node-specific kernels are computed once per forward
 pass, which does not change the graph-convolution equations.
 
-Platform changes: the network takes ``[B, L, N, F]`` and returns ``[B, H, N]``. ``forward``
-transposes to the legacy ``(B, N, F, W)`` layout on entry and back to ``[B, H, N]`` on exit; the
-computation in between is unchanged, and so are submodule and parameter names, so a legacy
-``state_dict`` of the same shapes loads directly.
+Platform changes: the network takes ``[B, L, N, F]`` and returns ``[B, H, N]``. Submodule and
+parameter names and shapes are those of the legacy network, so a legacy ``state_dict`` loads
+directly.
+
+Computation order. The recurrence is the authors' equations; it is arranged so that one training
+step launches far fewer GPU kernels, because at the sizes used here the step time is set by
+kernel launches, not by arithmetic. Each graph convolution reads ``[x_t, h]`` (the candidate reads
+``[x_t, r * h]``), so by linearity it is the sum of an input part and a state part. The input part
+does not depend on the recurrence and is applied to all steps at once; the loop keeps only the
+state part, as one GEMM for the support mixing and one ``baddbmm`` per Chebyshev order that adds
+onto the precomputed input part. The hidden state is kept as ``[N, B, hidden]`` so none of this
+needs a copy. The result equals the legacy loop up to floating-point summation order; the tests
+compare both, outputs and gradients, in float64 and float32.
 
 ``current_power_skip=True`` adds the latest finite scaled target-input value to the head output
 (a zero-initialized head then starts at persistence). The anchor must see missing values, so
@@ -47,6 +56,35 @@ def _network_classes():
     import torch
     from torch import nn
 
+    def input_terms(sequence, flat, weights, bias):
+        """Input part of a graph convolution for every step at once.
+
+        ``sequence`` is ``[T, N, B, C]``, ``flat`` the supports as ``[K * N, N]``, ``weights`` the
+        input rows ``[N, K, C, O]`` of the node-specific kernels and ``bias`` ``[N, O]``.
+        Returns ``[T, N, B, O]``.
+        """
+        T, N, B, C = sequence.shape
+        K, O = weights.shape[1], weights.shape[3]
+        mixed = (flat @ sequence.reshape(T, N, B * C)).view(T, K, N, B, C)
+        mixed = mixed.permute(2, 0, 3, 1, 4).reshape(N, T * B, K * C)
+        out = torch.baddbmm(bias.unsqueeze(1), mixed, weights.reshape(N, K * C, O))
+        return out.view(N, T, B, O).permute(1, 0, 2, 3).contiguous()
+
+    def state_terms(state, flat, weights, base):
+        """``base`` plus the state part of a graph convolution.
+
+        ``state`` is ``[N, B, H]``, ``weights`` the state rows as ``K`` tensors ``[N, H, O]`` (taken
+        apart once outside the loop) and ``base`` the precomputed input part ``[N, B, O]``.
+        """
+        N, B, H = state.shape
+        K = len(weights)
+        mixed = (flat @ state.reshape(N, B * H)).view(K, N, B, H)
+        out = base
+        # unbind, not mixed[k]: the backward of an index op allocates a full-size zero tensor per call
+        for part, weight in zip(mixed.unbind(0), weights):
+            out = torch.baddbmm(out, part, weight)
+        return out
+
     class AdaptiveGraphConvolution(nn.Module):
         """Node-adaptive parameter learning over Chebyshev graph supports."""
 
@@ -60,26 +98,35 @@ def _network_classes():
             bias = embeddings @ self.bias_pool
             return weights, bias
 
-        def forward(self, values, supports, projected):
-            weights, bias = projected
-            neighbors = torch.einsum("knm,bmc->bknc", supports, values)
-            return torch.einsum("bknc,nkco->bno", neighbors, weights) + bias
-
     class AdaptiveGraphCell(nn.Module):
         """GRU gates and candidate built from node-adaptive graph convolutions."""
 
         def __init__(self, input_size: int, hidden: int, embedding_size: int, cheb_k: int):
             super().__init__()
+            self.input_size = input_size
             self.hidden = hidden
             self.gate = AdaptiveGraphConvolution(input_size + hidden, 2 * hidden, embedding_size, cheb_k)
             self.candidate = AdaptiveGraphConvolution(input_size + hidden, hidden, embedding_size, cheb_k)
 
-        def forward(self, value, state, supports, gate_params, candidate_params):
-            gates = self.gate(torch.cat((value, state), dim=-1), supports, gate_params).sigmoid()
-            reset, update = gates.chunk(2, dim=-1)
-            proposal = self.candidate(torch.cat((value, reset * state), dim=-1),
-                                      supports, candidate_params).tanh()
-            return update * state + (1 - update) * proposal
+        def run(self, sequence, supports, embeddings):
+            """Hidden state at every step: ``[T, N, B, C]`` to ``[T, N, B, hidden]``."""
+            T, N, B, C = sequence.shape
+            flat = supports.reshape(-1, N)
+            gate_weights, gate_bias = self.gate.project(embeddings)           # [N, K, C + H, 2H], [N, 2H]
+            candidate_weights, candidate_bias = self.candidate.project(embeddings)
+            gate_input = input_terms(sequence, flat, gate_weights[:, :, :C], gate_bias)
+            candidate_input = input_terms(sequence, flat, candidate_weights[:, :, :C], candidate_bias)
+            gate_state = gate_weights[:, :, C:].permute(1, 0, 2, 3).contiguous().unbind(0)           # K x [N, H, 2H]
+            candidate_state = candidate_weights[:, :, C:].permute(1, 0, 2, 3).contiguous().unbind(0)  # K x [N, H, H]
+            state = sequence.new_zeros(N, B, self.hidden)
+            states = []
+            for gate_t, candidate_t in zip(gate_input.unbind(0), candidate_input.unbind(0)):
+                gates = state_terms(state, flat, gate_state, gate_t).sigmoid()
+                reset, update = gates.chunk(2, dim=-1)
+                proposal = state_terms(reset * state, flat, candidate_state, candidate_t).tanh()
+                state = torch.lerp(proposal, state, update)       # update * state + (1 - update) * proposal
+                states.append(state)
+            return torch.stack(states, dim=0)
 
     class PaperAGCRNNetwork(nn.Module):
         """Full-resolution AGCRN encoder with the paper's direct forecast head."""
@@ -142,22 +189,16 @@ def _network_classes():
             if self.current_power_skip:
                 anchor = latest_history_power(x, self.power_index, self.power_fallback)
                 x = torch.where(torch.isfinite(x), x, torch.zeros_like(x))
-            sequence = x.permute(0, 3, 1, 2)
+            sequence = x.permute(3, 1, 0, 2).contiguous()                  # (W, N, B, F)
             supports = self.graph_supports()
             for cell in self.cells:
-                gate_params = cell.gate.project(self.node_embeddings)
-                candidate_params = cell.candidate.project(self.node_embeddings)
-                state = sequence.new_zeros(x.shape[0], self.n_turbines, self.hidden)
-                outputs = []
-                for value in sequence.unbind(dim=1):
-                    state = cell(value, state, supports, gate_params, candidate_params)
-                    outputs.append(state)
-                sequence = torch.stack(outputs, dim=1)
+                sequence = cell.run(sequence, supports, self.node_embeddings)
             # The authors' 1 x hidden Conv2d emits every horizon directly.
-            power = self.end_conv(sequence[:, -1].unsqueeze(1)).squeeze(-1).transpose(1, 2)   # (B, N, H)
+            last = sequence[-1].transpose(0, 1)                            # (B, N, hidden)
+            power = self.end_conv(last.unsqueeze(1)).squeeze(-1).transpose(1, 2)   # (B, N, H)
             if self.current_power_skip:
                 power = power + anchor
-            return power.transpose(1, 2)                                                       # [B, H, N]
+            return power.transpose(1, 2)                                   # [B, H, N]
 
     return AdaptiveGraphConvolution, AdaptiveGraphCell, PaperAGCRNNetwork
 
