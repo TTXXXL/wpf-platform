@@ -1,0 +1,11 @@
+{
+  "label": "toto",
+  "model": "toto",
+  "params": {
+    "model_id": "Datadog/Toto-Open-Base-1.0",
+    "device": "auto",
+    "num_samples": null,
+    "samples_per_batch": 10,
+    "use_kv_cache": true
+  }
+}

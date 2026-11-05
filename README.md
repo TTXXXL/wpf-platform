@@ -8,13 +8,13 @@
 |---|---|
 | 数据集 | `sdwpf`（KDD Cup 2022，134 台，245 天）、`kelmarsh`（6 台）、`penmanshiel`（14 台）、`synthetic`（测试用） |
 | 任务 | `sdwpf_m1_legacy`、`sdwpf_m2_legacy`（旧 SDWPF 协议）；`kelmarsh_actual_6h`、`penmanshiel_actual_6h` 及对应的 `_2h`（实际出力）；`synthetic_6h` |
-| 模型 | 持续法、季节持续法、气候平均、Ridge、LightGBM、LSTM、TCN、DLinear、PatchTST、iTransformer、AGCRN（含当前功率残差版） |
+| 模型 | 持续法、季节持续法、气候平均、Ridge、LightGBM、LSTM、TCN、DLinear、PatchTST、iTransformer、AGCRN（含当前功率残差版）、Toto 1.0 推理适配器 |
 | 预留 | NWP 等未来已知输入的对齐函数（尚未接入任务） |
 
 ## 快速开始
 
 ```bash
-python -m pip install -e '.[deep,gbdt,test]'
+python -m pip install -e '.[deep,gbdt,test,toto]'
 wpf-benchmark build sdwpf                      # 从 data/raw/sdwpf/ 的两份 CSV 清洗构建
 wpf-benchmark tasks                            # 检查任务配置
 wpf-benchmark run --task sdwpf_m1_legacy --model persistence
