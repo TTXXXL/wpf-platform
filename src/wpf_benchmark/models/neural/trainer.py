@@ -267,5 +267,6 @@ def load_checkpoint(path, task, device: Optional[str] = None, strict: bool = Tru
     model.network.load_state_dict(saved["state_dict"], strict=True)
     model.network.eval()
     model.validation_metrics = saved["validation_metrics"]
-    model.n_params = int(sum(t.numel() for t in model.network.parameters() if t.requires_grad))
+    model.n_params = int(sum(t.numel() for t in model.network.parameters()
+                             if getattr(model, "monotone_quantiles", False) or t.requires_grad))
     return model

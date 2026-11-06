@@ -38,6 +38,15 @@ def _parser() -> argparse.ArgumentParser:
     s.add_argument("--task", required=True)
     s.add_argument("--predictions", required=True)
     s.add_argument("--out", required=True, help="Directory for metrics.json and per_horizon.csv")
+    for command in ("run-probability", "score-probability"):
+        qp = sub.add_parser(command, help="Explicit unit-marginal probability path")
+        qp.add_argument("--task", required=True)
+        qp.add_argument("--out", required=True)
+        if command == "run-probability":
+            qp.add_argument("--model", required=True)
+            qp.add_argument("--seed", type=int, default=0)
+        else:
+            qp.add_argument("--predictions", required=True)
     st = sub.add_parser("study", help="Run a batch plan from configs/studies/")
     st.add_argument("--plan", required=True, help="Plan name or path")
     st.add_argument("--preflight", action="store_true", help="Only check; do not train")
@@ -100,6 +109,13 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         from .evaluation import summary_row
         from .runner import score_predictions
         print(json.dumps(summary_row(score_predictions(paths, args.task, Path(args.predictions), Path(args.out))), indent=2))
+    elif args.command in ("run-probability", "score-probability"):
+        from .probability_runner import run_probability, score_probability
+        if args.command == "run-probability":
+            result = run_probability(paths, args.task, args.model, args.seed, Path(args.out))
+        else:
+            result = score_probability(paths, args.task, Path(args.predictions), Path(args.out))
+        print(json.dumps({mask: score.get("normalized_mean_pinball") for mask, score in result["scores"].items()}, indent=2))
     elif args.command == "study":
         from . import study
         plan = _plan_path(paths, args.plan)

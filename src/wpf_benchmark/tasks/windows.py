@@ -104,10 +104,14 @@ def build_split(task: ResolvedTask, panel: Panel, split: str) -> SplitData:
     a, b = panel.index_of(start), panel.index_of(end)
     if a >= len(panel.times) or panel.times[a] != start:
         raise ValueError(f"Split {split} start {start} is not on the dataset time grid")
-    if split == "test":
-        lo, first, stride = a - (task.L - 1), task.L - 1, task.eval_stride
+    protocol = cfg.extra.get("window_protocol", "legacy")
+    if protocol not in ("legacy", "causal_history_v1"):
+        raise ValueError(f"Unknown window protocol: {protocol}")
+    if split == "test" or (split == "valid" and protocol == "causal_history_v1"):
+        stride = task.eval_stride if split == "test" else task.train_stride
+        lo, first = a - (task.L - 1), task.L - 1
         if lo < 0:
-            raise ValueError("Not enough history before the test split")
+            raise ValueError(f"Not enough history before the {split} split")
     else:
         lo, first, stride = a, task.L - 1, task.train_stride
     issues = _issue_positions(first, b - 1 - lo, task.H, stride)

@@ -6,7 +6,7 @@ Each model file names its reference in the module docstring.
 
 | Model | Paper | Reference code | License |
 |---|---|---|---|
-| Toto adapter (`models/toto.py`) | DataDog, "Toto: An Open Time Series Foundation Model Optimized for Observability" | https://github.com/DataDog/toto | Apache-2.0 (upstream repository; pretrained weights are loaded externally) |
+| Toto adapter (`models/toto.py`, `models/toto_quantile.py`) | DataDog, "Toto: An Open Time Series Foundation Model Optimized for Observability" | https://github.com/DataDog/toto | Apache-2.0 (upstream repository; pretrained weights are loaded externally) |
 | AGCRN (`models/neural/agcrn.py`) | Bai et al., "Adaptive Graph Convolutional Recurrent Network for Traffic Forecasting", NeurIPS 2020 | https://github.com/LeiBAI/AGCRN | MIT |
 | TCN (`models/neural/tcn.py`) | Bai, Kolter, Koltun, "An Empirical Evaluation of Generic Convolutional and Recurrent Networks for Sequence Modeling", 2018 | https://github.com/locuslab/TCN | MIT |
 | DLinear (`models/neural/dlinear.py`) | Zeng et al., "Are Transformers Effective for Time Series Forecasting?", AAAI 2023 | https://github.com/thuml/Time-Series-Library | MIT |

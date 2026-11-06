@@ -12,8 +12,8 @@ from typing import Any
 
 import numpy as np
 
-from ..base import Forecaster, register_model
-from ...tasks import ForecastBatch, TaskContext
+from .base import Forecaster, register_model
+from ..tasks import ForecastBatch, TaskContext
 
 
 @register_model("toto")
@@ -83,6 +83,7 @@ class TotoForecasterModel(Forecaster):
         from toto.model.toto import Toto
         from toto.inference.forecaster import TotoForecaster
 
+        super().fit(ctx, train, valid)
         self._device = self._resolve_device()
         # Load on CPU first so Hugging Face/local checkpoints do not allocate a
         # second full model on the requested accelerator during deserialization.
@@ -146,6 +147,7 @@ class TotoForecasterModel(Forecaster):
         )
 
     def predict(self, batch: ForecastBatch) -> np.ndarray:
+        import torch
         if self._forecaster is None:
             raise RuntimeError("toto must be fitted or loaded before predict")
 
